@@ -1,0 +1,42 @@
+spring:
+  profiles:
+    active: default
+  cloud:
+    config:
+      name: task-service
+      uri: ${CENTRAL_CONFIG_SERVER_URI :http://localhost:8888}
+      fail-fast: true
+      retry:
+        max-attempts: 10
+        max-interval: 2000
+    vault:
+      enabled: false
+      fail-fast: false
+      host: localhost
+      port: 8200
+      scheme: http
+      authentication: APPROLE
+      app-role:
+        role-id: ${VAULT_ROLE_ID}
+        secret-id: ${VAULT_SECRET_ID}
+      kv:
+        enabled: true
+        backend: kv
+        default-context: ticketing
+        profile-separator: '/'
+
+  datasource:
+    url: ${TASK_DB_URL}
+    username: ${TASK_DB_USERNAME}
+    password: ${TASK_DB_PASSWORD}
+
+keycloak:
+  credentials:
+    secret: ${TASK_KEYCLOAK_CREDENTIALS}
+
+master:
+  user:
+    username: ${TASK_KEYCLOAK_MASTER_USERNAME}
+    password: ${TASK_KEYCLOAK_MASTER_PASSWORD}
+  realm: ${TASK_KEYCLOAK_MASTER_REALM}
+  client: ${TASK_KEYCLOAK_MASTER_CLIENT}

@@ -1,3 +1,22 @@
 spring:
   application:
     name: task-service
+
+# @CircuitBreaker(name = "project-service" | "user-service") ile eşleşen instance adları
+resilience4j:
+  circuitbreaker:
+    instances:
+      project-service:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        permittedNumberOfCallsInHalfOpenState: 3
+        waitDurationInOpenState: 10s
+        failureRateThreshold: 50
+      user-service:
+        registerHealthIndicator: true
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        permittedNumberOfCallsInHalfOpenState: 3
+        waitDurationInOpenState: 10s
+        failureRateThreshold: 50
