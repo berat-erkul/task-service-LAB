@@ -209,6 +209,25 @@ public class TaskController {
 
     }
 
+    @RolesAllowed("Employee")
+    @GetMapping("/check/employee/project/{projectCode}")
+    @Operation(summary = "Whether the logged-in employee has at least one task on the project.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Check completed."),
+            @ApiResponse(responseCode = "403", description = "Access is denied",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ExceptionWrapper.class),
+                            examples = @ExampleObject(value = SwaggerExamples.ACCESS_DENIED_FORBIDDEN_RESPONSE_EXAMPLE)))})
+    public ResponseEntity<ResponseWrapper> employeeHasTaskOnProject(@PathVariable("projectCode") String projectCode) {
+        boolean hasTask = taskService.employeeHasAssignedTaskOnProject(projectCode);
+        return ResponseEntity
+                .ok(ResponseWrapper.builder()
+                        .success(true)
+                        .statusCode(HttpStatus.OK)
+                        .message("Employee project task check completed.")
+                        .data(hasTask)
+                        .build());
+    }
+
     @RolesAllowed("Manager")
     @GetMapping("/count/project/{projectCode}")
     @Operation(summary = "Read all task counts of a project by project code.")
@@ -350,6 +369,37 @@ public class TaskController {
                         .data(updatedTask)
                         .build());
 
+    }
+
+    @RolesAllowed("Employee")
+    @PutMapping("/update/employee/{taskCode}/start-in-progress")
+    @Operation(summary = "Move own OPEN task to IN_PROGRESS (employee only).")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Task status is IN_PROGRESS.",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ResponseWrapper.class),
+                            examples = @ExampleObject(value = SwaggerExamples.TASK_UPDATE_RESPONSE_EXAMPLE))),
+            @ApiResponse(responseCode = "404", description = "Task does not exist.",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ExceptionWrapper.class),
+                            examples = @ExampleObject(value = SwaggerExamples.TASK_NOT_FOUND_RESPONSE_EXAMPLE))),
+            @ApiResponse(responseCode = "400", description = "Task is not OPEN.",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ExceptionWrapper.class))),
+            @ApiResponse(responseCode = "403", description = "Access denied, make sure that you are working on your own task.",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ExceptionWrapper.class),
+                            examples = @ExampleObject(value = SwaggerExamples.TASK_ACCESS_DENIED_FORBIDDEN_RESPONSE_EXAMPLE))),
+            @ApiResponse(responseCode = "403", description = "Access is denied",
+                    content = @Content(mediaType = "application/json", schema = @Schema(implementation = ExceptionWrapper.class),
+                            examples = @ExampleObject(value = SwaggerExamples.ACCESS_DENIED_FORBIDDEN_RESPONSE_EXAMPLE)))})
+    public ResponseEntity<ResponseWrapper> employeeOpenToInProgress(@PathVariable("taskCode") String taskCode) {
+
+        TaskDTO updatedTask = taskService.employeeOpenToInProgress(taskCode);
+
+        return ResponseEntity
+                .ok(ResponseWrapper.builder()
+                        .success(true)
+                        .statusCode(HttpStatus.OK)
+                        .message("Task is now IN_PROGRESS.")
+                        .data(updatedTask)
+                        .build());
     }
 
     @RolesAllowed("Manager")

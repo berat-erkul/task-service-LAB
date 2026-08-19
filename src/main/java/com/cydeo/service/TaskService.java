@@ -14,11 +14,19 @@ public interface TaskService {
     List<TaskDTO> readAllTasksByProject(String projectCode);
     List<TaskDTO> readAllByStatus(Status status);
     List<TaskDTO> readAllByStatusIsNot(Status status);
+
+    /** Oturumdaki çalışanın bu projede atanmış görevi var mı (silinmemiş kayıtlar). */
+    boolean employeeHasAssignedTaskOnProject(String projectCode);
     Map<String, Integer> getCountsByProject(String projectCode);
     Integer countNonCompletedByAssignedEmployee(String assignedEmployee);
 
     TaskDTO update(String taskCode, TaskDTO taskDTO);
     TaskDTO updateStatus(String taskCode, Status status);
+
+    /**
+     * Yalnızca oturumdaki çalışanın kendisine atanmış ve durumu OPEN olan görevi IN_PROGRESS yapar.
+     */
+    TaskDTO employeeOpenToInProgress(String taskCode);
     void completeByProject(String projectCode);
 
     void delete(String taskCode);

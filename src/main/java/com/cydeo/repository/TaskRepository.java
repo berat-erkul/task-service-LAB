@@ -13,6 +13,10 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
 
     Optional<Task> findByTaskCode(String taskCode);
 
+    boolean existsByProjectCodeAndAssignedEmployee(String projectCode, String assignedEmployee);
+
+    boolean existsByProjectCodeAndAssignedEmployeeIgnoreCase(String projectCode, String assignedEmployee);
+
     List<Task> findAllByProjectCode(String projectCode);
 
     long countByProjectCode(String projectCode);

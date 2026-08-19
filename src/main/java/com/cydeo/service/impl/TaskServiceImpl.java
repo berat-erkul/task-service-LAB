@@ -1,7 +1,7 @@
 package com.cydeo.service.impl;
 
-import com.cydeo.client.ProjectFeignFacade;
-import com.cydeo.client.UserFeignFacade;
+import com.cydeo.client.ProjectClient;
+import com.cydeo.client.UserClient;
 import com.cydeo.dto.Response.ProjectResponse;
 import com.cydeo.dto.Response.UserResponse;
 import com.cydeo.dto.TaskDTO;
@@ -26,16 +26,15 @@ public class TaskServiceImpl implements TaskService {
     private final TaskRepository taskRepository;
     private final MapperUtil mapperUtil;
     private final KeycloakService keycloakService;
-    private final ProjectFeignFacade projectFeignFacade;
-    private final UserFeignFacade userFeignFacade;
+    private final ProjectClient projectClient;
+    private final UserClient userClient;
 
-    public TaskServiceImpl(TaskRepository taskRepository, MapperUtil mapperUtil, KeycloakService keycloakService,
-                           ProjectFeignFacade projectFeignFacade, UserFeignFacade userFeignFacade) {
+    public TaskServiceImpl(TaskRepository taskRepository, MapperUtil mapperUtil, KeycloakService keycloakService, ProjectClient projectClient, UserClient userClient) {
         this.taskRepository = taskRepository;
         this.mapperUtil = mapperUtil;
         this.keycloakService = keycloakService;
-        this.projectFeignFacade = projectFeignFacade;
-        this.userFeignFacade = userFeignFacade;
+        this.projectClient = projectClient;
+        this.userClient = userClient;
     }
 
     @Override
@@ -64,8 +63,13 @@ public class TaskServiceImpl implements TaskService {
 
         // İlk görev atamasında proje OPEN ise IN_PROGRESS'e geçsin
         if (existingTaskCount == 0) {
-            ResponseEntity<ProjectResponse> resp = projectFeignFacade.startProject(taskDTO.getProjectCode());
-            if (resp == null || resp.getBody() == null || !resp.getBody().isSuccess()) {
+            try {
+                ResponseEntity<ProjectResponse> resp = projectClient.startProject(taskDTO.getProjectCode());
+                if (resp == null || resp.getBody() == null || !resp.getBody().isSuccess()) {
+                    throw new ProjectCheckFailedException("Project start is failed.");
+                }
+            } catch (Exception ex) {
+                // Feign / downstream errors should not fall into generic handler
                 throw new ProjectCheckFailedException("Project start is failed.");
             }
         }
@@ -103,6 +107,18 @@ public class TaskServiceImpl implements TaskService {
         String loggedInUserUsername = keycloakService.getUsername();
         List<Task> list = taskRepository.findAllByTaskStatusIsNotAndAssignedEmployee(status, loggedInUserUsername);
         return list.stream().map(obj -> mapperUtil.convert(obj, new TaskDTO())).collect(Collectors.toList());
+    }
+
+    @Override
+    public boolean employeeHasAssignedTaskOnProject(String projectCode) {
+        if (projectCode == null || projectCode.isBlank()) {
+            return false;
+        }
+        String username = keycloakService.getUsername();
+        if (username == null || username.isBlank()) {
+            return false;
+        }
+        return taskRepository.existsByProjectCodeAndAssignedEmployeeIgnoreCase(projectCode.trim(), username.trim());
     }
 
     @Override
@@ -175,6 +191,27 @@ public class TaskServiceImpl implements TaskService {
     }
 
     @Override
+    public TaskDTO employeeOpenToInProgress(String taskCode) {
+        if (taskCode == null || taskCode.isBlank()) {
+            throw new TaskNotFoundException("Task does not exist.");
+        }
+        String code = taskCode.trim();
+        Task foundTask = taskRepository.findByTaskCode(code)
+                .orElseThrow(() -> new TaskNotFoundException("Task does not exist."));
+
+        checkEmployeeAccessToTask(keycloakService.getUsername(), foundTask);
+
+        if (foundTask.getTaskStatus() != Status.OPEN) {
+            throw new TaskInvalidStateException(
+                    "Only OPEN tasks can be moved to IN_PROGRESS. Current status: " + foundTask.getTaskStatus());
+        }
+
+        foundTask.setTaskStatus(Status.IN_PROGRESS);
+        Task updatedTask = taskRepository.save(foundTask);
+        return mapperUtil.convert(updatedTask, new TaskDTO());
+    }
+
+    @Override
     public void completeByProject(String projectCode) {
 
         List<Task> tasks = taskRepository.findAllByProjectCode(projectCode);
@@ -218,7 +255,7 @@ public class TaskServiceImpl implements TaskService {
 
     private void checkProjectExists(String projectCode) {
 
-        ResponseEntity<ProjectResponse> response = projectFeignFacade.checkByProjectCode(projectCode);
+        ResponseEntity<ProjectResponse> response = projectClient.checkByProjectCode(projectCode);
 
         if (!Objects.requireNonNull(response.getBody()).isSuccess()) {
             throw new ProjectCheckFailedException("Project check is failed.");
@@ -231,7 +268,7 @@ public class TaskServiceImpl implements TaskService {
 
     private void checkEmployeeExists(String assignedEmployee) {
 
-        ResponseEntity<UserResponse> existsResp = userFeignFacade.checkByUsername(assignedEmployee);
+        ResponseEntity<UserResponse> existsResp = userClient.checkByUsername(assignedEmployee);
         if (!Objects.requireNonNull(existsResp.getBody()).isSuccess()) {
             throw new EmployeeCheckFailedException("Employee check is failed.");
         }
@@ -239,7 +276,7 @@ public class TaskServiceImpl implements TaskService {
             throw new EmployeeNotFoundException("Employee does not exist.");
         }
 
-        ResponseEntity<UserResponse> empResp = userFeignFacade.checkEmployeeByUsername(assignedEmployee);
+        ResponseEntity<UserResponse> empResp = userClient.checkEmployeeByUsername(assignedEmployee);
         if (!Objects.requireNonNull(empResp.getBody()).isSuccess()) {
             throw new EmployeeCheckFailedException("Employee check is failed.");
         }
@@ -253,7 +290,10 @@ public class TaskServiceImpl implements TaskService {
 
         String loggedInUserUsername = keycloakService.getUsername();
 
-        if (keycloakService.hasClientRole(loggedInUserUsername, "Manager")) {
+        // Admin tüm projelerin task'larını okuyabilir; sahiplik kontrolü Manager/Employee için geçerli.
+        if (keycloakService.hasClientRole(loggedInUserUsername, "Admin")) {
+            return;
+        } else if (keycloakService.hasClientRole(loggedInUserUsername, "Manager")) {
             checkManagerAccessToTaskProject(loggedInUserUsername, task);
         } else if (keycloakService.hasClientRole(loggedInUserUsername, "Employee")) {
             checkEmployeeAccessToTask(loggedInUserUsername, task);
@@ -265,7 +305,7 @@ public class TaskServiceImpl implements TaskService {
 
     private void checkCreateAccessToTaskProject(String loggedInUserUsername, String projectCode) {
 
-        ResponseEntity<ProjectResponse> response = projectFeignFacade.getManagerByProject(projectCode);
+        ResponseEntity<ProjectResponse> response = projectClient.getManagerByProject(projectCode);
 
         if (Objects.requireNonNull(response.getBody()).isSuccess()) {
             String taskProjectManager = (String) response.getBody().getData();
